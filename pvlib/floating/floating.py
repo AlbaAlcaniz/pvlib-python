@@ -157,6 +157,11 @@ class Sea:
 
         return elevation, AmpA, AmpB
     
+    def get_sea_amplitudes(self, type_spectrum, wind_speed_x, wind_speed_y, x):
+        AmpA_x, AmpB_x = self.surface_elevation(type_spectrum, wind_speed_x, x)[1:3]
+        AmpA_y, AmpB_y = self.surface_elevation(type_spectrum, wind_speed_y, x)[1:3]
+        return [AmpA_x, AmpB_x, AmpA_y, AmpB_y]
+    
 
 class Floater:
     def __init__(self, mass, width, length, thickness, orientation):
@@ -193,7 +198,12 @@ class Floater:
         theta = fact * aux2
         return theta
     
-    def get_tilt_azimuth(self, roll, pitch):
+    def get_tilt_azimuth(self, Sea, sea_amplitudes):
+        # Get the inclination angles for both axes
+        AmpA_x, AmpB_x, AmpA_y, AmpB_y = sea_amplitudes
+        roll = self.get_inclination_angles('x', Sea, AmpA_y, AmpB_y)
+        pitch = self.get_inclination_angles('y', Sea, AmpA_x, AmpB_x)
+
         # Transformation to horizontal coordinates
         tilt = np.rad2deg(np.arccos(np.cos(np.deg2rad(pitch)) * np.cos(np.deg2rad(roll))))
         tan_Am = np.sin(np.deg2rad(pitch)) / np.tan(np.deg2rad(roll))

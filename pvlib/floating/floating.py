@@ -11,7 +11,7 @@ TODO: include the pierson-moskowitz spectrum
 # Alba Alcañiz, Delft University of Technology 2024
 
 import numpy as np
-from pvlib.tools import sind, cosd, tand
+from pvlib.tools import sind, cosd, tand, acosd, atand
 
 # Gravitational acceleration [m/s^2]
 # g = 9.806
@@ -45,7 +45,7 @@ def decompose_wind_speed(wind_speed, wind_dir, facing_dir):
 
 
 class Sea:
-    """
+    '''
     Sea objects are containers for spectra and surface elevation associated to 
     a particular water body.
 
@@ -63,9 +63,9 @@ class Sea:
         has hourly resolution and dt = 1 s, t_dur should be 3600, default 3600
     density : float
         Sea water density, default 1029 [kg/m3]
-    """
+    '''
     def __init__(self, dw=0.01, w_max=8, dt=1, t_dur=3600, density=1029):
-        """
+        '''
         ang_freq : numeric
             Range of angular frequencies over which the spectrum is computed
         time : numeric
@@ -73,7 +73,7 @@ class Sea:
             input wind data and the output results
         wave_num : numeric
             Wave number associated to the angular frequency [1/m]
-        """
+        '''
         self.ang_freq = np.arange(dw, w_max + dw, dw)
         self.time = np.arange(dt, t_dur + dt, dt)
         self.wave_num = self.ang_freq**2 / 9.806
@@ -268,6 +268,23 @@ class Sea:
     
 
 class Floater:
+    '''
+    Floater objects contain main dimensions and characteristics of the floating
+    body over which PV modules are placed.
+
+    Parameters
+    ----------
+    mass : float
+        Mass of the floater including the PV system components [kg]
+    width : float
+        Width of the floater [m]
+    length : float
+        Length of the floater [m]
+    thickness : float
+        Thickness of the floater [m]
+    orientation : float
+        Facing direction of the floater [degree]
+    '''
     def __init__(self, mass, width, length, thickness, orientation):
         self.mass = mass
         self.width = width
@@ -276,16 +293,50 @@ class Floater:
         self.orientation = orientation
     
     def compute_inertia_moment(self, axis):
-        # This function assumes a rectangular floater
-        # Could be upgraded to include inertia moments for different shapes
+        """
+        Compute the inertia moment for a rectangular floater
+        TODO: upgrade to include inertia moments for different shapes
+
+        Parameters
+        ----------
+        axis : string
+            Axis over which the inertia is computed. Options are 'x' and 'y'
+
+        Returns
+        -------
+        I : float
+            Inertia moment
+        """
         if axis == 'x':
             I = 1/12*self.mass*(self.length**2 + self.thickness**2)
         elif axis == 'y':
             I = 1/12*self.mass*(self.width**2 + self.thickness**2)
+        else:
+            raise ValueError('%s is not a valid axis for the inertia', axis)
 
         return I
     
     def get_inclination_angles(self, axis, Sea, AmpA, AmpB):
+        """
+        Compute the rotational angle of a rigid floater considering the 
+        pressure exerted by the waves on the floater.
+
+        Parameters
+        ----------
+        axis : string
+            Axis of the rotational angle. Options are 'x' and 'y'
+        Sea : object
+            Container of the characteristics of the sea where the floater is
+        AmpA : numeric
+            Amplitude of the surface elevation related to the cosine [m]
+        AmpB : numeric
+            Amplitude of the surface elevation related to the sine [m]
+
+        Returns
+        -------
+        theta : numeric
+            Inclination angle [degree]
+        """
         I = self.compute_inertia_moment(axis)
         if axis == 'x':
             wid = self.width; leng = self.length
@@ -293,32 +344,55 @@ class Floater:
             wid = self.length; leng = self.width
         fact = 19.612 * Sea.density * wid / I
         xx = Sea.wave_num * leng / 2
-        aux1 = 1 / (Sea.wave_num**2 * Sea.ang_freq**2) * (np.sin(xx) - xx * np.cos(xx))
+        aux1 = (1 / (Sea.wave_num**2 * Sea.ang_freq**2) * 
+                (np.sin(xx) - xx * np.cos(xx)))
         aux1 = aux1.reshape(len(aux1),1)
         # shift = np.random.uniform(size=(len(Sea.ang_freq),1)) * np.ones((1,len(Sea.time)))
-        shift = np.ones((len(Sea.ang_freq),1)) * np.ones((1,len(Sea.time)))
-        arg_rad = (Sea.ang_freq.reshape(len(Sea.ang_freq),1))@(Sea.time.reshape(1,len(Sea.time))) + shift
-        aux2 = AmpA @ (aux1*np.sin(arg_rad)) + AmpB @ (aux1*np.cos(arg_rad))
+        shift = np.ones((len(Sea.ang_freq), 1)) * np.ones((1, len(Sea.time)))
+        arg_rad = ((Sea.ang_freq.reshape(len(Sea.ang_freq), 1)) @ 
+                   (Sea.time.reshape(1,len(Sea.time))) + shift)
+        aux2 = (AmpA @ (aux1 * np.sin(arg_rad)) + 
+                AmpB @ (aux1 * np.cos(arg_rad)))
         theta = fact * aux2
         return theta
     
     def get_tilt_azimuth(self, Sea, sea_amplitudes):
-        # Get the inclination angles for both axes
+        """
+        Get the tilt and azimuth of the floater. First compute the rotational 
+        angles of the floater (the pitch and roll) and then perform a 
+        coordinate change to azimuth and tilt. 
+
+        Parameters
+        ----------
+        Sea : object
+            Container of the characteristics of the sea where the floater is
+        sea_amplitudes : list
+            Amplitudes in the x and y directions and for the sine and cosine 
+            components of the sea elevation
+
+        Returns
+        -------
+        tilt : numeric
+            Tilt of the floater [degree]
+        azimuth : numeric
+            Azimuth of the floater [degree]
+
+        Notes
+        -----
+        The coordinate change is based on the roof to horizontal coordinate 
+        change described in Appendix E.4 from the "Solar Energy" book from 
+        A. Smets et al.
+        """
         AmpA_x, AmpB_x, AmpA_y, AmpB_y = sea_amplitudes
         roll = self.get_inclination_angles('x', Sea, AmpA_y, AmpB_y)
         pitch = self.get_inclination_angles('y', Sea, AmpA_x, AmpB_x)
 
-        # Transformation to horizontal coordinates
-        tilt = np.rad2deg(np.arccos(np.cos(np.deg2rad(pitch)) * np.cos(np.deg2rad(roll))))
-        tan_Am = np.sin(np.deg2rad(pitch)) / np.tan(np.deg2rad(roll))
-        Am = np.rad2deg(np.arctan(tan_Am))
-        # Ensure that the azimuth always stays within [0, 360)
-        Am[(90-pitch)>90] = Am[(90-pitch)>90] + 180
-        Am[Am<0] = Am[Am<0] + 360
-        # Set the azimuth to 0 degrees when the floater is flat
-        Am[(pitch==0) & (roll==0)] = 0
+        tilt = acosd(cosd(pitch) * cosd(roll))
+        azimuth = atand(sind(pitch) / tand(roll))
+        azimuth[(90-pitch)>90] = azimuth[(90-pitch)>90] + 180
+        azimuth[azimuth<0] = azimuth[azimuth<0] + 360
+        azimuth[(pitch==0) & (roll==0)] = 0
 
-        # Convert from matrix to vectors
         tilt = tilt.reshape(tilt.size)
-        Am = Am.reshape(Am.size)
-        return tilt, Am
+        azimuth = azimuth.reshape(azimuth.size)
+        return tilt, azimuth

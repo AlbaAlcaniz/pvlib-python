@@ -13,9 +13,6 @@ TODO: include the pierson-moskowitz spectrum
 import numpy as np
 from pvlib.tools import sind, cosd, tand, acosd, atand
 
-# Gravitational acceleration [m/s^2]
-# g = 9.806
-
 def decompose_wind_speed(wind_speed, wind_dir, facing_dir):
     """
     Decompose the wind speed into x and y components following a determined 
@@ -113,7 +110,7 @@ class Sea:
         '''
         sign_wave_height, avg_period = self.jonswap_params(wind_speed)
 
-        peak_period = avg_period * 1.2856
+        peak_period = avg_period * (0.327 * np.exp(-1.0395) + 1.17)
         peak_ang_freq = 2 * np.pi / peak_period
         peak_ang_freq = peak_ang_freq.reshape(len(peak_ang_freq),1)
 
@@ -259,10 +256,10 @@ class Sea:
             Amplitudes in the x and y directions and for the sine and cosine 
             components of the sea elevation
         '''
-        AmpA_x, AmpB_x = self.surface_elevation(type_spectrum, wind_speed_x, 
-                                                x)[1:3]
-        AmpA_y, AmpB_y = self.surface_elevation(type_spectrum, wind_speed_y, 
-                                                x)[1:3]
+        AmpA_x, AmpB_x = self.surface_elevation(wind_speed_x, x,
+                                                type_spectrum)[1:3]
+        AmpA_y, AmpB_y = self.surface_elevation(wind_speed_y, x,
+                                                type_spectrum)[1:3]
         amplitudes = [AmpA_x, AmpB_x, AmpA_y, AmpB_y]
         return amplitudes
     
